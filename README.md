@@ -18,11 +18,13 @@ There are no package installs or build steps. Fonts, graphics, code, and the ré
 
 - `index.html`: portfolio content and accessible navigation.
 - `styles.css`: responsive styling and self-hosted typography.
-- `app.js`: scroll motion, timeline state, project dialogs, and email copy.
-- `sculpture.js`: original native WebGL sculpture with static SVG fallback.
-- `interactions.js`: finite workflow animations, manual steps, replay, section entrances, and timeline progress.
+- `app.js`: hero motion loop (intro, idle turn, scroll, pointer, drag to spin), project dialogs, and email copy.
+- `cursor.js`: custom cursor, magnetic controls, and tilting, spotlit panels for mouse and trackpad users.
+- `theme.js`: light and dark themes, the header toggle, and the circular theme reveal.
+- `sculpture.js`: original native WebGL sculpture (draw-on intro, light and dark chrome studios, cursor swell) with static SVG fallback.
+- `interactions.js`: finite workflow animations, manual steps, replay, section entrances, count-ups, and timeline progress.
 - `PROJECT-SOURCES.md`: verified project links and content provenance.
-- `motion-utils.mjs`: bounded scroll progress and easing.
+- `motion-utils.mjs`: bounded scroll progress, easing, and frame-rate independent smoothing.
 - `cases.js`: case study content used by the interactive dialogs.
 - `case-studies.html`: complete static case studies for use without JavaScript.
 - `assets/sai-hitesh-resume.pdf`: the supplied résumé.
@@ -31,7 +33,11 @@ If changing project copy, update both `cases.js` and `case-studies.html`. The fa
 
 ## Motion and accessibility
 
-Scrolling changes the sculpture's perspective and shape. Client workflow diagrams play one finite sequence when first seen, with replay and manual step controls. Visible descriptions always match the selected stage; automatic playback mutes live announcements. Pause motion stops both the sculpture and interface animations. System reduced-motion settings begin with a static page. Native project dialogs support Escape and return keyboard focus to the opening link. If WebGL is unavailable, a local static silver graphic is shown. Full case studies remain available without JavaScript.
+On load the headline rises line by line and the sculpture draws itself in along its length. It then turns slowly about its own axis, leans toward a mouse pointer, and rotates further as the hero scrolls away; it only renders while the hero is on screen and the tab is visible. Sections fade and rise into place as they enter, cascading when several arrive together; this hidden state is applied only after an inline script confirms JavaScript, and is lifted after three seconds if the scripts fail to load. Client workflow diagrams play one finite sequence when first seen (about four seconds): a packet travels the connector, and each node activates as it arrives. Replay and manual step controls remain.
+
+With a mouse or trackpad, a trailing ring replaces the system cursor: it grows over links, wraps and pulls magnetic buttons toward the pointer, labels a few targets ("Drag", "Read", "Open"), and a soft glow follows it. Workflow panels and the project screenshot tilt toward the pointer under a spotlight. The sculpture swells where the pointer passes over it, and can be dragged or flicked to spin; it coasts, then settles back at rest. Touch devices, paused motion, and reduced motion keep the system cursor and none of these effects. The system cursor also returns while a case study dialog is open.
+
+The theme toggle in the header switches between light and dark, revealing the new theme in a circle from the button where the browser supports view transitions. The choice is saved in local storage; until a visitor chooses, the page follows the system setting, including without JavaScript. An inline script applies the theme before first paint, so there is no flash. Colours are tokens at the top of `styles.css`. Visible descriptions always match the selected stage; automatic playback mutes live announcements. Pause motion stops the sculpture (showing it complete and still), the scroll-linked turn, and interface animations. System reduced-motion settings begin with a static page with all content visible. Native project dialogs support Escape and return keyboard focus to the opening link. If WebGL is unavailable, a local static silver graphic is shown. Full case studies remain available without JavaScript.
 
 ## Higgsfield status
 
