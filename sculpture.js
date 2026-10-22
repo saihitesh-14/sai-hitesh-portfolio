@@ -1,19 +1,32 @@
-/* An original parametric sculpture. Its only clock is the page's scroll position. */
+/* An original parametric sculpture. Scroll, a slow idle clock, and the pointer drive it. */
 const vertexSource = `
 precision highp float;
 attribute vec2 aParameter;
 uniform float uProgress;
+uniform float uReveal;
+uniform float uSpin;
+uniform float uFlow;
+uniform vec2 uTilt;
 uniform vec2 uViewport;
 varying vec3 vPosition;
 varying vec3 vNormal;
 varying vec3 vTangent;
 varying vec2 vParameter;
+varying float vGrowth;
 const float PI = 3.141592653589793;
+const float TAPER = 1.4;
 
 vec3 centerline(float t) {
   float minorRadius = .385 + .025 * sin(uProgress * PI);
   float ring = 1.02 + minorRadius * cos(3.0 * t);
   return vec3(ring * cos(2.0 * t), ring * sin(2.0 * t), minorRadius * sin(3.0 * t));
+}
+
+// The strand grows along its length on entry, ending in a tapered tip rather than an open tube.
+float growth(float t) {
+  float head = uReveal * (2.0 * PI + TAPER);
+  float g = clamp((head - t) / TAPER, 0.0, 1.0);
+  return g * g * (3.0 - 2.0 * g);
 }
 
 vec3 surface(vec2 uv) {
@@ -23,18 +36,19 @@ vec3 surface(vec2 uv) {
   vec3 tangent = normalize(centerline(t + .0008) - centerline(t - .0008));
   vec3 outward = normalize(cross(tangent, vec3(0.0, 0.0, 1.0)));
   vec3 binormal = normalize(cross(tangent, outward));
-  float twist = t + .14 * sin(3.0 * t) + uProgress * .13;
+  // A slowly travelling twist rolls the oval cross-section along the strand.
+  float twist = t + .14 * sin(3.0 * t) + uProgress * .13 + uFlow;
   vec3 n = outward * cos(twist) + binormal * sin(twist);
   vec3 b = -outward * sin(twist) + binormal * cos(twist);
-  float groove = 1.0 + .0055 * cos(v * 32.0);
-  float radius = (.177 + .012 * sin(3.0 * t + .5)) * groove;
+  float radius = (.177 + .012 * sin(3.0 * t + .5)) * max(growth(t), .002);
   c += radius * (n * cos(v) + b * sin(v) * .69);
+  c.xy = mat2(cos(uSpin), sin(uSpin), -sin(uSpin), cos(uSpin)) * c.xy;
   return c * vec3(1.12, 1.05, 1.0);
 }
 
 vec3 pose(vec3 p) {
-  float ax = .69 + uProgress * .12;
-  float ay = -.33 + uProgress * 1.6;
+  float ax = .69 + uProgress * .12 + uTilt.y;
+  float ay = -.33 + uProgress * 1.6 + uTilt.x;
   float az = -.26 + uProgress * .32;
   p.yz = mat2(cos(ax), sin(ax), -sin(ax), cos(ax)) * p.yz;
   p.xz = mat2(cos(ay), -sin(ay), sin(ay), cos(ay)) * p.xz;
@@ -51,6 +65,7 @@ void main() {
   vNormal = normalize(pose(normalize(cross(dv, du))));
   vTangent = normalize(pose(du));
   vParameter = uv;
+  vGrowth = growth(uv.x);
   float shortSide = min(uViewport.x, uViewport.y);
   vec2 fit = vec2(shortSide / uViewport.x, shortSide / uViewport.y) / 1.98;
   // A long product lens gives depth without making the front strand loom.
@@ -61,53 +76,63 @@ void main() {
 
 const fragmentSource = `
 precision highp float;
+uniform float uLight;
 varying vec3 vPosition;
 varying vec3 vNormal;
 varying vec3 vTangent;
 varying vec2 vParameter;
+varying float vGrowth;
 
-// A white photography studio, its softboxes, and narrow neutral reflection flags.
+// A photography studio: dark floor, bright sky, softboxes, a black flag, and one card in the site's blue.
 // Everything is procedural, so the sculpture does not download an environment map.
 vec3 studio(vec3 r) {
-  vec3 low = vec3(.36, .38, .41);
-  vec3 high = vec3(.91, .93, .96);
-  vec3 light = mix(low, high, smoothstep(-.65, .75, r.y));
-  float sideFlag = exp(-pow((r.x + .16) * 4.8, 2.0));
-  sideFlag *= smoothstep(-.45, .45, r.z);
-  light *= 1.0 - .48 * sideFlag;
-  float whiteCard = exp(-pow((r.x - .53) * 8.5, 2.0));
-  whiteCard *= smoothstep(-.6, .35, r.z);
-  light += vec3(.54, .54, .53) * whiteCard;
-  float tallBox = pow(max(dot(r, normalize(vec3(-.8, .65, .7))), 0.0), 20.0);
-  float topBox = pow(max(dot(r, normalize(vec3(.3, 1.0, .25))), 0.0), 10.0);
-  light += vec3(.62, .61, .59) * tallBox + vec3(.28) * topBox;
+  // Turning the studio, not the object, sweeps highlights across the chrome.
+  float c = cos(uLight);
+  float s = sin(uLight);
+  r.xz = mat2(c, -s, s, c) * r.xz;
+  vec3 floorTone = vec3(.15, .165, .2);
+  vec3 sky = vec3(.92, .935, .965);
+  vec3 light = mix(floorTone, sky, smoothstep(-.22, .3, r.y));
+  light += vec3(.2, .21, .23) * exp(-pow(r.y * 6.0, 2.0));
+  float flag = exp(-pow((r.x + .14) * 5.5, 2.0)) * smoothstep(-.35, .45, r.z) * smoothstep(-.1, .35, r.y);
+  light *= 1.0 - .62 * flag;
+  float strip = exp(-pow((r.x - .56) * 9.0, 2.0)) * smoothstep(-.5, .35, r.z);
+  float tallBox = pow(max(dot(r, normalize(vec3(-.8, .6, .7))), 0.0), 22.0);
+  float topBox = pow(max(dot(r, normalize(vec3(.3, 1.0, .25))), 0.0), 9.0);
+  light += vec3(.7) * strip + vec3(.95, .95, .93) * tallBox + vec3(.32) * topBox;
+  float blueCard = exp(-pow((r.x + .6) * 3.4, 2.0)) * smoothstep(.1, -.5, r.y);
+  light += vec3(.05, .09, .27) * blueCard;
   return light;
 }
 
 void main() {
+  if (vGrowth < .01) discard;
   vec3 n = normalize(vNormal);
   vec3 view = normalize(vec3(0.0, 0.0, 7.5) - vPosition);
   vec3 reflected = reflect(-view, n);
   vec3 tangent = normalize(vTangent);
   // The broad and narrow samples soften reflections along the brushed direction.
-  vec3 environment = studio(reflected) * .62;
-  environment += studio(normalize(reflected + tangent * .085)) * .19;
-  environment += studio(normalize(reflected - tangent * .085)) * .19;
+  vec3 environment = studio(reflected) * .7;
+  environment += studio(normalize(reflected + tangent * .06)) * .15;
+  environment += studio(normalize(reflected - tangent * .06)) * .15;
   float fresnel = pow(1.0 - max(dot(view, n), 0.0), 5.0);
-  vec3 silver = mix(vec3(.86, .88, .91), vec3(.98), fresnel);
+  vec3 silver = mix(vec3(.9, .92, .95), vec3(1.0), fresnel);
   vec3 color = environment * silver;
   float key = max(dot(n, normalize(vec3(-.5, .85, 1.0))), 0.0);
-  color += vec3(.065) * key;
-  // A quiet machining grain; geometry supplies the larger parallel grooves.
+  color += vec3(.04) * key;
+  // A quiet machining grain keeps the polish from looking like plastic.
   float grain = sin(vParameter.x * 1130.0 + sin(vParameter.y * 53.0) * 2.0);
-  color *= 1.0 + grain * .009;
-  color = color / (vec3(1.0) + color * .30);
-  color = pow(max(color, vec3(0.0)), vec3(.82));
+  color *= 1.0 + grain * .006;
+  color = color / (vec3(1.0) + color * .22);
+  color = pow(max(color, vec3(0.0)), vec3(.86));
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }
 `;
 
-/** Create a dependency-free, scroll-driven WebGL sculpture, preserving the SVG on failure. */
+const restingPose = { progress: 0, reveal: 1, spin: 0, flow: 0, light: 0, tilt: [0, 0] };
+const finite = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+
+/** Create a dependency-free WebGL sculpture, preserving the SVG on failure. */
 export function createSculpture(canvas) {
   if (!canvas || typeof canvas.getContext !== 'function') return null;
   const parent = canvas.closest('.sculpture-wrap');
@@ -136,7 +161,7 @@ export function createSculpture(canvas) {
 
   let resources = null;
   let contextLost = false;
-  let currentProgress = 0;
+  let current = { ...restingPose };
 
   function initialize() {
     const shaders = [];
@@ -196,6 +221,11 @@ export function createSculpture(canvas) {
         count: indices.length,
         parameter: gl.getAttribLocation(program, 'aParameter'),
         progress: gl.getUniformLocation(program, 'uProgress'),
+        reveal: gl.getUniformLocation(program, 'uReveal'),
+        spin: gl.getUniformLocation(program, 'uSpin'),
+        flow: gl.getUniformLocation(program, 'uFlow'),
+        tilt: gl.getUniformLocation(program, 'uTilt'),
+        light: gl.getUniformLocation(program, 'uLight'),
         viewport: gl.getUniformLocation(program, 'uViewport'),
       };
     } catch {
@@ -208,9 +238,18 @@ export function createSculpture(canvas) {
     }
   }
 
-  function draw(progress = currentProgress) {
+  /** Draw one frame. Omitted fields keep their previous values. */
+  function draw(pose = {}) {
+    const tilt = Array.isArray(pose.tilt) ? pose.tilt : current.tilt;
+    current = {
+      progress: Math.max(0, Math.min(1, finite(pose.progress, current.progress))),
+      reveal: Math.max(0, Math.min(1, finite(pose.reveal, current.reveal))),
+      spin: finite(pose.spin, current.spin),
+      flow: finite(pose.flow, current.flow),
+      light: finite(pose.light, current.light),
+      tilt: [finite(tilt[0], 0), finite(tilt[1], 0)],
+    };
     if (contextLost || !resources || gl.isContextLost()) return;
-    currentProgress = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -232,7 +271,12 @@ export function createSculpture(canvas) {
     gl.enableVertexAttribArray(resources.parameter);
     gl.vertexAttribPointer(resources.parameter, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, resources.indexBuffer);
-    gl.uniform1f(resources.progress, currentProgress);
+    gl.uniform1f(resources.progress, current.progress);
+    gl.uniform1f(resources.reveal, current.reveal);
+    gl.uniform1f(resources.spin, current.spin);
+    gl.uniform1f(resources.flow, current.flow);
+    gl.uniform2f(resources.tilt, current.tilt[0], current.tilt[1]);
+    gl.uniform1f(resources.light, current.light);
     gl.uniform2f(resources.viewport, width, height);
     gl.drawElements(gl.TRIANGLES, resources.count, gl.UNSIGNED_SHORT, 0);
     if (!gl.isContextLost()) {
@@ -256,10 +300,9 @@ export function createSculpture(canvas) {
   canvas.addEventListener('webglcontextrestored', () => {
     contextLost = false;
     resources = initialize();
-    if (resources) draw(currentProgress);
+    if (resources) draw();
     else revealFallback();
   });
 
-  draw(0);
   return { draw };
 }
