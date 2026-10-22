@@ -1,4 +1,4 @@
-/* An original parametric sculpture. Scroll, a slow idle clock, and the pointer drive it. */
+/* An original parametric sculpture. Scroll, a slow idle clock, dragging, and the pointer drive it. */
 const vertexSource = `
 precision highp float;
 attribute vec2 aParameter;
@@ -7,6 +7,8 @@ uniform float uReveal;
 uniform float uSpin;
 uniform float uFlow;
 uniform vec2 uTilt;
+uniform vec2 uPointer;
+uniform float uSwell;
 uniform vec2 uViewport;
 varying vec3 vPosition;
 varying vec3 vNormal;
@@ -29,6 +31,30 @@ float growth(float t) {
   return g * g * (3.0 - 2.0 * g);
 }
 
+vec3 pose(vec3 p) {
+  float ax = .69 + uProgress * .12 + uTilt.y;
+  float ay = -.33 + uProgress * 1.6 + uTilt.x;
+  float az = -.26 + uProgress * .32;
+  p.yz = mat2(cos(ax), sin(ax), -sin(ax), cos(ax)) * p.yz;
+  p.xz = mat2(cos(ay), -sin(ay), sin(ay), cos(ay)) * p.xz;
+  p.xy = mat2(cos(az), sin(az), -sin(az), cos(az)) * p.xy;
+  return p;
+}
+
+vec2 fitToViewport() {
+  float shortSide = min(uViewport.x, uViewport.y);
+  return vec2(shortSide / uViewport.x, shortSide / uViewport.y) / 1.98;
+}
+
+// The strand swells where it passes under the cursor, like a lens over the chrome.
+float swellAt(vec3 centre) {
+  if (uSwell <= 0.0) return 0.0;
+  vec3 q = pose(centre * vec3(1.12, 1.05, 1.0));
+  float perspective = 5.8 / (5.8 - q.z * .3);
+  vec2 offset = q.xy * perspective - uPointer / fitToViewport();
+  return uSwell * exp(-dot(offset, offset) / .16);
+}
+
 vec3 surface(vec2 uv) {
   float t = uv.x;
   float v = uv.y;
@@ -40,20 +66,13 @@ vec3 surface(vec2 uv) {
   float twist = t + .14 * sin(3.0 * t) + uProgress * .13 + uFlow;
   vec3 n = outward * cos(twist) + binormal * sin(twist);
   vec3 b = -outward * sin(twist) + binormal * cos(twist);
-  float radius = (.177 + .012 * sin(3.0 * t + .5)) * max(growth(t), .002);
+  mat2 spin = mat2(cos(uSpin), sin(uSpin), -sin(uSpin), cos(uSpin));
+  vec3 centre = c;
+  centre.xy = spin * centre.xy;
+  float radius = (.177 + .012 * sin(3.0 * t + .5)) * max(growth(t), .002) * (1.0 + .8 * swellAt(centre));
   c += radius * (n * cos(v) + b * sin(v) * .69);
-  c.xy = mat2(cos(uSpin), sin(uSpin), -sin(uSpin), cos(uSpin)) * c.xy;
+  c.xy = spin * c.xy;
   return c * vec3(1.12, 1.05, 1.0);
-}
-
-vec3 pose(vec3 p) {
-  float ax = .69 + uProgress * .12 + uTilt.y;
-  float ay = -.33 + uProgress * 1.6 + uTilt.x;
-  float az = -.26 + uProgress * .32;
-  p.yz = mat2(cos(ax), sin(ax), -sin(ax), cos(ax)) * p.yz;
-  p.xz = mat2(cos(ay), -sin(ay), sin(ay), cos(ay)) * p.xz;
-  p.xy = mat2(cos(az), sin(az), -sin(az), cos(az)) * p.xy;
-  return p;
 }
 
 void main() {
@@ -66,8 +85,7 @@ void main() {
   vTangent = normalize(pose(du));
   vParameter = uv;
   vGrowth = growth(uv.x);
-  float shortSide = min(uViewport.x, uViewport.y);
-  vec2 fit = vec2(shortSide / uViewport.x, shortSide / uViewport.y) / 1.98;
+  vec2 fit = fitToViewport();
   // A long product lens gives depth without making the front strand loom.
   float perspective = 5.8 / (5.8 - vPosition.z * .3);
   gl_Position = vec4(vPosition.xy * fit * perspective, -vPosition.z * .18, 1.0);
@@ -77,6 +95,7 @@ void main() {
 const fragmentSource = `
 precision highp float;
 uniform float uLight;
+uniform float uDark;
 varying vec3 vPosition;
 varying vec3 vNormal;
 varying vec3 vTangent;
@@ -84,16 +103,17 @@ varying vec2 vParameter;
 varying float vGrowth;
 
 // A photography studio: dark floor, bright sky, softboxes, a black flag, and one card in the site's blue.
+// The dark theme dims the room but keeps the softboxes, so the chrome reads as polished black.
 // Everything is procedural, so the sculpture does not download an environment map.
 vec3 studio(vec3 r) {
   // Turning the studio, not the object, sweeps highlights across the chrome.
   float c = cos(uLight);
   float s = sin(uLight);
   r.xz = mat2(c, -s, s, c) * r.xz;
-  vec3 floorTone = vec3(.15, .165, .2);
-  vec3 sky = vec3(.92, .935, .965);
+  vec3 floorTone = mix(vec3(.15, .165, .2), vec3(.03, .035, .045), uDark);
+  vec3 sky = mix(vec3(.92, .935, .965), vec3(.34, .37, .44), uDark);
   vec3 light = mix(floorTone, sky, smoothstep(-.22, .3, r.y));
-  light += vec3(.2, .21, .23) * exp(-pow(r.y * 6.0, 2.0));
+  light += mix(vec3(.2, .21, .23), vec3(.1, .11, .14), uDark) * exp(-pow(r.y * 6.0, 2.0));
   float flag = exp(-pow((r.x + .14) * 5.5, 2.0)) * smoothstep(-.35, .45, r.z) * smoothstep(-.1, .35, r.y);
   light *= 1.0 - .62 * flag;
   float strip = exp(-pow((r.x - .56) * 9.0, 2.0)) * smoothstep(-.5, .35, r.z);
@@ -101,7 +121,7 @@ vec3 studio(vec3 r) {
   float topBox = pow(max(dot(r, normalize(vec3(.3, 1.0, .25))), 0.0), 9.0);
   light += vec3(.7) * strip + vec3(.95, .95, .93) * tallBox + vec3(.32) * topBox;
   float blueCard = exp(-pow((r.x + .6) * 3.4, 2.0)) * smoothstep(.1, -.5, r.y);
-  light += vec3(.05, .09, .27) * blueCard;
+  light += mix(vec3(.05, .09, .27), vec3(.12, .2, .62), uDark) * blueCard;
   return light;
 }
 
@@ -129,7 +149,7 @@ void main() {
 }
 `;
 
-const restingPose = { progress: 0, reveal: 1, spin: 0, flow: 0, light: 0, tilt: [0, 0] };
+const restingPose = { progress: 0, reveal: 1, spin: 0, flow: 0, light: 0, dark: 0, swell: 0, tilt: [0, 0], pointer: [0, 0] };
 const finite = (value, fallback) => (Number.isFinite(value) ? value : fallback);
 
 /** Create a dependency-free WebGL sculpture, preserving the SVG on failure. */
@@ -226,6 +246,9 @@ export function createSculpture(canvas) {
         flow: gl.getUniformLocation(program, 'uFlow'),
         tilt: gl.getUniformLocation(program, 'uTilt'),
         light: gl.getUniformLocation(program, 'uLight'),
+        dark: gl.getUniformLocation(program, 'uDark'),
+        swell: gl.getUniformLocation(program, 'uSwell'),
+        pointer: gl.getUniformLocation(program, 'uPointer'),
         viewport: gl.getUniformLocation(program, 'uViewport'),
       };
     } catch {
@@ -241,13 +264,17 @@ export function createSculpture(canvas) {
   /** Draw one frame. Omitted fields keep their previous values. */
   function draw(pose = {}) {
     const tilt = Array.isArray(pose.tilt) ? pose.tilt : current.tilt;
+    const pointer = Array.isArray(pose.pointer) ? pose.pointer : current.pointer;
     current = {
       progress: Math.max(0, Math.min(1, finite(pose.progress, current.progress))),
       reveal: Math.max(0, Math.min(1, finite(pose.reveal, current.reveal))),
       spin: finite(pose.spin, current.spin),
       flow: finite(pose.flow, current.flow),
       light: finite(pose.light, current.light),
+      dark: Math.max(0, Math.min(1, finite(pose.dark, current.dark))),
+      swell: Math.max(0, Math.min(1, finite(pose.swell, current.swell))),
       tilt: [finite(tilt[0], 0), finite(tilt[1], 0)],
+      pointer: [finite(pointer[0], 0), finite(pointer[1], 0)],
     };
     if (contextLost || !resources || gl.isContextLost()) return;
     const rect = canvas.getBoundingClientRect();
@@ -277,6 +304,9 @@ export function createSculpture(canvas) {
     gl.uniform1f(resources.flow, current.flow);
     gl.uniform2f(resources.tilt, current.tilt[0], current.tilt[1]);
     gl.uniform1f(resources.light, current.light);
+    gl.uniform1f(resources.dark, current.dark);
+    gl.uniform1f(resources.swell, current.swell);
+    gl.uniform2f(resources.pointer, current.pointer[0], current.pointer[1]);
     gl.uniform2f(resources.viewport, width, height);
     gl.drawElements(gl.TRIANGLES, resources.count, gl.UNSIGNED_SHORT, 0);
     if (!gl.isContextLost()) {

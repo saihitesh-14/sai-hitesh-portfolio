@@ -1,10 +1,13 @@
-import { sectionProgress, smoothRange, easeOutCubic, easeInOutCubic, follow } from './motion-utils.mjs?v=3';
-import { createSculpture } from './sculpture.js?v=3';
-import { caseStudies } from './cases.js?v=3';
-import { initInteractions } from './interactions.js?v=3';
+import { sectionProgress, smoothRange, easeOutCubic, easeInOutCubic, follow } from './motion-utils.mjs?v=4';
+import { createSculpture } from './sculpture.js?v=4';
+import { caseStudies } from './cases.js?v=4';
+import { initInteractions } from './interactions.js?v=4';
+import { initTheme } from './theme.js?v=4';
+import { initCursor } from './cursor.js?v=4';
 
 const hero = document.querySelector('.hero-scroll');
 const canvas = document.querySelector('.sculpture');
+const sculptureWrap = document.querySelector('.sculpture-wrap');
 const shadow = document.querySelector('.sculpture-shadow');
 const sculpture = createSculpture(canvas);
 const progressLine = document.querySelector('.hero-progress span');
@@ -18,6 +21,8 @@ let motionFrame = 0;
 let lastFrame = 0;
 let heroVisible = true;
 let interactions = null;
+let cursor = null;
+const TURN = Math.PI * 2;
 // The intro starts slightly after the headline so the strand draws in beside it.
 const INTRO_DELAY = .25;
 const INTRO_DURATION = 2.1;
@@ -28,7 +33,17 @@ const motion = {
   scrollTarget: 0,
   tilt: [0, 0],
   tiltTarget: [0, 0],
+  // Dragging spins the sculpture like a weighted wheel: it coasts, then settles at its resting angle.
+  yaw: 0,
+  yawVelocity: 0,
+  pitch: 0,
+  pointer: [0, 0],
+  pointerTarget: [0, 0],
+  swell: 0,
+  swellTarget: 0,
+  dark: 0,
 };
+const drag = { active: false, id: null, x: 0, y: 0, time: 0 };
 
 function updateMotionLabel() {
   motionButton.setAttribute('aria-pressed', String(paused));
@@ -36,6 +51,7 @@ function updateMotionLabel() {
   motionIcon.textContent = paused ? '▷' : 'Ⅱ';
   document.body.dataset.motion = paused ? 'paused' : 'running';
   interactions?.syncMotion();
+  cursor?.sync();
 }
 motionButton.hidden = false;
 updateMotionLabel();
@@ -55,7 +71,10 @@ function render() {
     spin: motion.clock * .11 - (1 - settle) * 1.25,
     flow: motion.clock * .32,
     light: Math.sin(motion.clock * .21) * .3 + motion.tilt[0] * 1.4,
-    tilt: motion.tilt,
+    tilt: [motion.tilt[0] + motion.yaw, motion.tilt[1] + motion.pitch],
+    pointer: motion.pointer,
+    swell: motion.swell,
+    dark: motion.dark,
   });
   const float = paused ? 0 : Math.sin(motion.clock * .85) * 7;
   canvas.style.transform = float ? `translate3d(0, ${float.toFixed(2)}px, 0)` : '';
@@ -77,6 +96,16 @@ function frame(now) {
   motion.intro = Math.min(1, motion.intro + delta / INTRO_DURATION);
   motion.scroll = follow(motion.scroll, motion.scrollTarget, 7, delta);
   motion.tilt = motion.tilt.map((value, axis) => follow(value, motion.tiltTarget[axis], 3.5, delta));
+  motion.pointer = motion.pointer.map((value, axis) => follow(value, motion.pointerTarget[axis], 14, delta));
+  motion.swell = follow(motion.swell, motion.swellTarget, 5, delta);
+  if (!drag.active) {
+    // A spring toward the nearest full turn, with friction, gives a coast and a soft landing.
+    const rest = Math.round(motion.yaw / TURN) * TURN;
+    motion.yawVelocity += (rest - motion.yaw) * 5 * delta;
+    motion.yawVelocity *= Math.exp(-2 * delta);
+    motion.yaw += motion.yawVelocity * delta;
+    motion.pitch = follow(motion.pitch, 0, 3, delta);
+  }
   render();
   motionFrame = requestAnimationFrame(frame);
 }
@@ -92,6 +121,10 @@ function settleStill() {
   // A paused sculpture is complete and still, even if paused mid-intro. Scrolling no longer turns it.
   motion.intro = 1;
   motion.tilt = [0, 0];
+  motion.yaw = Math.round(motion.yaw / TURN) * TURN;
+  motion.yawVelocity = 0;
+  motion.pitch = 0;
+  motion.swell = motion.swellTarget = 0;
   render();
 }
 function onScroll() {
@@ -114,10 +147,47 @@ reducedMotion.addEventListener('change', () => setPaused(reducedMotion.matches))
 window.addEventListener('scroll', onScroll, { passive: true });
 window.addEventListener('resize', () => { onScroll(); render(); }, { passive: true });
 window.addEventListener('pointermove', event => {
-  if (!finePointer.matches) return;
+  if (!finePointer.matches || event.pointerType === 'touch') return;
   motion.tiltTarget = [(event.clientX / window.innerWidth - .5) * .34, (event.clientY / window.innerHeight - .5) * .2];
+  // The swell follows the pointer in the canvas's own coordinates, and fades away from the sculpture.
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const x = (event.clientX - rect.left) / rect.width * 2 - 1;
+  const y = 1 - (event.clientY - rect.top) / rect.height * 2;
+  motion.pointerTarget = [x, y];
+  motion.swellTarget = paused || Math.abs(x) > 1.1 || Math.abs(y) > 1.1 ? 0 : 1;
 }, { passive: true });
-document.documentElement.addEventListener('pointerleave', () => { motion.tiltTarget = [0, 0]; });
+document.documentElement.addEventListener('pointerleave', () => {
+  motion.tiltTarget = [0, 0];
+  motion.swellTarget = 0;
+});
+
+sculptureWrap.addEventListener('pointerdown', event => {
+  if (!sculpture || paused || (event.pointerType === 'mouse' && event.button !== 0)) return;
+  Object.assign(drag, { active: true, id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp });
+  motion.yawVelocity = 0;
+  sculptureWrap.setPointerCapture(event.pointerId);
+  sculptureWrap.classList.add('is-dragging');
+  startMotion();
+});
+sculptureWrap.addEventListener('pointermove', event => {
+  if (!drag.active || event.pointerId !== drag.id) return;
+  const seconds = Math.max((event.timeStamp - drag.time) / 1000, 1 / 240);
+  const turn = (event.clientX - drag.x) * .011;
+  motion.yaw += turn;
+  motion.pitch = Math.max(-.6, Math.min(.6, motion.pitch + (event.clientY - drag.y) * .006));
+  // Blend recent samples so a flick releases at the speed it was thrown.
+  motion.yawVelocity = Math.max(-24, Math.min(24, motion.yawVelocity * .4 + (turn / seconds) * .6));
+  Object.assign(drag, { x: event.clientX, y: event.clientY, time: event.timeStamp });
+});
+function endDrag(event) {
+  if (!drag.active || event.pointerId !== drag.id) return;
+  drag.active = false;
+  // Holding still before letting go means no throw.
+  if (event.timeStamp - drag.time > 90) motion.yawVelocity = 0;
+  sculptureWrap.classList.remove('is-dragging');
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => sculptureWrap.addEventListener(type, endDrag));
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopMotion();
   else startMotion();
@@ -128,11 +198,20 @@ if ('IntersectionObserver' in window) {
     if (heroVisible) startMotion();
   }).observe(hero);
 }
+initTheme({
+  button: document.querySelector('.theme-toggle'),
+  canAnimate: () => !paused,
+  onChange: theme => {
+    motion.dark = theme === 'dark' ? 1 : 0;
+    render();
+  },
+});
 onScroll();
 render();
 startMotion();
 
 interactions = initInteractions({ isPaused: () => paused, reducedMotion });
+cursor = initCursor({ isPaused: () => paused, reducedMotion });
 
 const dialog = document.querySelector('.case-dialog');
 const caseContent = document.querySelector('.case-content');
