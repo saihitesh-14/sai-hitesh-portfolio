@@ -1,5 +1,5 @@
 /** Pointer play for mice and trackpads: a trailing cursor, magnetic controls, and panels that tilt toward the pointer. */
-import { follow } from './motion-utils.mjs?v=4';
+import { follow } from './motion-utils.mjs?v=5';
 
 const RING = 30;
 const RING_LINK = 50;

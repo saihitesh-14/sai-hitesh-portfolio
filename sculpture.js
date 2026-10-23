@@ -110,8 +110,8 @@ vec3 studio(vec3 r) {
   float c = cos(uLight);
   float s = sin(uLight);
   r.xz = mat2(c, -s, s, c) * r.xz;
-  vec3 floorTone = mix(vec3(.15, .165, .2), vec3(.03, .035, .045), uDark);
-  vec3 sky = mix(vec3(.92, .935, .965), vec3(.34, .37, .44), uDark);
+  vec3 floorTone = mix(vec3(.16, .155, .15), vec3(.035, .035, .033), uDark);
+  vec3 sky = mix(vec3(.94, .93, .91), vec3(.36, .36, .38), uDark);
   vec3 light = mix(floorTone, sky, smoothstep(-.22, .3, r.y));
   light += mix(vec3(.2, .21, .23), vec3(.1, .11, .14), uDark) * exp(-pow(r.y * 6.0, 2.0));
   float flag = exp(-pow((r.x + .14) * 5.5, 2.0)) * smoothstep(-.35, .45, r.z) * smoothstep(-.1, .35, r.y);

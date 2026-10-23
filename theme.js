@@ -1,6 +1,6 @@
 /** Light and dark themes. The inline script in the page head applies the first theme before paint. */
 const STORAGE_KEY = 'theme';
-const browserColors = { light: '#f7f8fa', dark: '#0e1014' };
+const browserColors = { light: '#f2f0ea', dark: '#121211' };
 
 function readStored() {
   try {

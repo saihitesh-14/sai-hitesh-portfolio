@@ -1,16 +1,19 @@
-import { sectionProgress, smoothRange, easeOutCubic, easeInOutCubic, follow } from './motion-utils.mjs?v=4';
-import { createSculpture } from './sculpture.js?v=4';
-import { caseStudies } from './cases.js?v=4';
-import { initInteractions } from './interactions.js?v=4';
-import { initTheme } from './theme.js?v=4';
-import { initCursor } from './cursor.js?v=4';
+import { sectionProgress, smoothRange, easeOutCubic, easeInOutCubic, follow } from './motion-utils.mjs?v=5';
+import { runLoader } from './loader.js?v=5';
+import { createSculpture } from './sculpture.js?v=5';
+import { caseStudies } from './cases.js?v=5';
+import { initInteractions } from './interactions.js?v=5';
+import { initTheme } from './theme.js?v=5';
+import { initCursor } from './cursor.js?v=5';
+import { initSections } from './sections.js?v=5';
+
+runLoader();
 
 const hero = document.querySelector('.hero-scroll');
 const canvas = document.querySelector('.sculpture');
 const sculptureWrap = document.querySelector('.sculpture-wrap');
 const shadow = document.querySelector('.sculpture-shadow');
 const sculpture = createSculpture(canvas);
-const progressLine = document.querySelector('.hero-progress span');
 const motionButton = document.querySelector('.motion-toggle');
 const motionLabel = document.querySelector('.motion-label');
 const motionIcon = document.querySelector('.motion-icon');
@@ -22,6 +25,10 @@ let lastFrame = 0;
 let heroVisible = true;
 let interactions = null;
 let cursor = null;
+let sections = null;
+const root = document.documentElement;
+// While the loader covers the page, the sculpture waits to draw itself in.
+const behindLoader = () => root.classList.contains('is-loading') && !root.classList.contains('is-leaving');
 const TURN = Math.PI * 2;
 // The intro starts slightly after the headline so the strand draws in beside it.
 const INTRO_DELAY = .25;
@@ -52,6 +59,7 @@ function updateMotionLabel() {
   document.body.dataset.motion = paused ? 'paused' : 'running';
   interactions?.syncMotion();
   cursor?.sync();
+  sections?.sync();
 }
 motionButton.hidden = false;
 updateMotionLabel();
@@ -93,7 +101,7 @@ function frame(now) {
   const delta = lastFrame ? Math.min((now - lastFrame) / 1000, .1) : 1 / 60;
   lastFrame = now;
   motion.clock += delta;
-  motion.intro = Math.min(1, motion.intro + delta / INTRO_DURATION);
+  if (!behindLoader()) motion.intro = Math.min(1, motion.intro + delta / INTRO_DURATION);
   motion.scroll = follow(motion.scroll, motion.scrollTarget, 7, delta);
   motion.tilt = motion.tilt.map((value, axis) => follow(value, motion.tiltTarget[axis], 3.5, delta));
   motion.pointer = motion.pointer.map((value, axis) => follow(value, motion.pointerTarget[axis], 14, delta));
@@ -129,7 +137,6 @@ function settleStill() {
 }
 function onScroll() {
   motion.scrollTarget = measureProgress();
-  progressLine.style.transform = 'scaleX(' + motion.scrollTarget + ')';
 }
 function setPaused(value) {
   paused = value;
@@ -212,6 +219,7 @@ startMotion();
 
 interactions = initInteractions({ isPaused: () => paused, reducedMotion });
 cursor = initCursor({ isPaused: () => paused, reducedMotion });
+sections = initSections({ isPaused: () => paused, reducedMotion, countUp: figure => interactions.countUp(figure) });
 
 const dialog = document.querySelector('.case-dialog');
 const caseContent = document.querySelector('.case-content');

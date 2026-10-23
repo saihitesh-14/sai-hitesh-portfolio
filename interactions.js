@@ -224,6 +224,7 @@ export function initInteractions({ isPaused = () => false, reducedMotion } = {})
     workflows.filter(state => state.steps.length).forEach(state => workflowObserver.observe(state.element));
   }
 
+  /** Count a figure such as "400+" or "$5K" up from zero, once. */
   function countUp(element) {
     const match = element.textContent.trim().match(/^(\D*)(\d+)(\D*)$/);
     if (!match || !canMove()) return;
@@ -258,7 +259,6 @@ export function initInteractions({ isPaused = () => false, reducedMotion } = {})
     // Elements entering together, such as a row of timeline entries, cascade left to right.
     element.style.setProperty('--reveal-delay', `${Math.min(order, 4) * 90}ms`);
     element.classList.add('is-revealed');
-    element.querySelectorAll('.community-figures strong').forEach(countUp);
   }
   let revealObserver;
   if ('IntersectionObserver' in window) {
@@ -368,5 +368,5 @@ export function initInteractions({ isPaused = () => false, reducedMotion } = {})
     cleanups.forEach(cleanup => cleanup());
   }
 
-  return { syncMotion, destroy };
+  return { syncMotion, destroy, countUp };
 }
